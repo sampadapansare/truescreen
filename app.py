@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import requests
 import uuid
+import os
 
 app = Flask(__name__)
 app.secret_key = 'f283f91a99edbc930fd3fd47c592fc33bdc1b8d7e7d0765a'
@@ -139,5 +140,5 @@ def detect():
 
 # ─── Run ────────────────────────────────────────────────────────────────────
 
-if __name__=='__main__':
-    socketio.run(app, debug=True)
+if __name__ == '__main__':
+    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
