@@ -5,8 +5,8 @@ import numpy as np
 import requests
 import uuid
 import os
-import random
 import smtplib
+import random
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -15,90 +15,101 @@ app.secret_key = 'f283f91a99edbc930fd3fd47c592fc33bdc1b8d7e7d0765a'
 socketio = SocketIO(app)
 
 # In‑memory stores
-users = {}            # username → password
-otp_dict = {}         # username → OTP
+users = {}            # username → password, otp, otp_verified
 meetings = set()      # active meeting IDs
 
 # Face cascade
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades +
+    'haarcascade_frontalface_default.xml')
 
-# Roboflow config
-ROBOFLOW_API_KEY = "ATCth3RHKPljJdY3UmHL"
-ROBOFLOW_MODEL_ID = "interview-dxisb/3"
+# ─── Send OTP Function ────────────────────────────────────────────────────────
+def send_otp_email(user_email):
+    otp = random.randint(10000, 99999)  # 5-digit OTP
+    users[user_email]['otp'] = otp
 
-# Email configuration
-EMAIL_USER = 'your_email@gmail.com'  # Replace with your email
-EMAIL_PASSWORD = 'your_email_password'  # Replace with your email password
+    # Set up the email server
+    sender_email = "your_email@gmail.com"  # Replace with your email
+    receiver_email = user_email
+    password = "your_email_password"  # Replace with your email password
 
+    subject = "Your OTP Code"
+    body = f"Your OTP code is: {otp}"
+
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = receiver_email
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        # Setup the SMTP server and send the email
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, password)
+        text = msg.as_string()
+        server.sendmail(sender_email, receiver_email, text)
+        server.quit()
+    except Exception as e:
+        print(f"Error sending email: {e}")
 
 # ─── Auth & Meeting Routes ───────────────────────────────────────────────────
-
 @app.route('/')
 def home():
     return redirect(url_for('login'))
 
-
-@app.route('/register', methods=['GET', 'POST'])
+@app.route('/register', methods=['GET','POST'])
 def register():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
         email = request.form['email']
-
-        # Generate OTP
-        otp = random.randint(10000, 99999)  # 5-digit OTP
-        otp_dict[username] = otp
-
-        # Send OTP via email
-        send_otp_email(email, otp)
-
-        # Save user registration details without verification for now
-        users[username] = {'password': password, 'email': email}
-
-        flash(f"OTP sent to {email}. Please enter it to verify your registration.", "info")
+        
+        users[username] = {'password': password, 'email': email, 'otp_verified': False}
+        send_otp_email(email)  # Send OTP email after registration
         return redirect(url_for('verify_otp', username=username))
-
+    
     return render_template('register.html')
 
+@app.route('/login', methods=['GET','POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        # Check if username exists and password is correct
+        if username in users and users[username]['password'] == password:
+            # Check if OTP is verified
+            if users[username].get('otp_verified', False):
+                session['username'] = username
+                return redirect(url_for('dashboard'))
+            else:
+                flash("Please verify your OTP first.", "danger")
+                return redirect(url_for('verify_otp', username=username))
+        else:
+            flash("Invalid credentials. Please try again.", "danger")
+    
+    return render_template('login.html')
 
 @app.route('/verify_otp/<username>', methods=['GET', 'POST'])
 def verify_otp(username):
     if request.method == 'POST':
-        entered_otp = int(request.form['otp'])
-
-        # Verify OTP
-        if otp_dict.get(username) == entered_otp:
-            flash("Registration successful! Please log in.", "success")
-            del otp_dict[username]  # Remove OTP after verification
+        otp = request.form['otp']
+        
+        # Check OTP validity
+        if otp == str(users[username]['otp']):
+            users[username]['otp_verified'] = True  # Mark OTP as verified
+            flash("OTP verified successfully!", "success")
             return redirect(url_for('login'))
         else:
             flash("Invalid OTP. Please try again.", "danger")
 
     return render_template('verify_otp.html', username=username)
 
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        
-        # Validate login
-        if username in users and users[username]['password'] == password:
-            session['username'] = username
-            return redirect(url_for('dashboard'))
-        else:
-            flash("Invalid credentials. Please try again.", "danger")
-
-    return render_template('login.html')
-
-
 @app.route('/dashboard')
 def dashboard():
     if 'username' not in session:
         return redirect(url_for('login'))
     return render_template('dashboard.html', username=session['username'])
-
 
 @app.route('/schedule')
 def schedule():
@@ -108,19 +119,17 @@ def schedule():
     meetings.add(m)
     return render_template('schedule.html', meeting_id=m)
 
-
-@app.route('/join', methods=['GET', 'POST'])
+@app.route('/join', methods=['GET','POST'])
 def join():
     if 'username' not in session:
         return redirect(url_for('login'))
-    error = None
-    if request.method == 'POST':
+    error=None
+    if request.method=='POST':
         m = request.form['meeting_id']
         if m in meetings:
             return redirect(url_for('interview', meeting_id=m))
-        error = "Invalid Meeting ID"
+        error="Invalid Meeting ID"
     return render_template('join.html', error=error)
-
 
 @app.route('/interview/<meeting_id>')
 def interview(meeting_id):
@@ -130,12 +139,10 @@ def interview(meeting_id):
         return redirect(url_for('join'))
     return render_template('interview.html', meeting_id=meeting_id)
 
-
 @app.route('/logout')
 def logout():
-    session.pop('username', None)
+    session.pop('username',None)
     return redirect(url_for('login'))
-
 
 # ─── WebRTC Signaling ────────────────────────────────────────────────────────
 
@@ -143,70 +150,51 @@ def logout():
 def on_join(data):
     room = data['room']
     join_room(room)
+    # notify existing peers
     emit('user-joined', {'sid': request.sid}, room=room, include_self=False)
-
 
 @socketio.on('signal')
 def on_signal(data):
     room = data['room']
     emit('signal', data, room=room, include_self=False)
 
-
 # ─── Fraud Detection Endpoint ────────────────────────────────────────────────
 
 @app.route('/detect', methods=['POST'])
 def detect():
     room = request.form['room']
+    # Read uploaded frame
     file = request.files['frame'].read()
     arr = np.frombuffer(file, np.uint8)
     frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
     alert = ""
+    # Face absence
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, 1.1, 4)
-    if len(faces) == 0:
+    faces = face_cascade.detectMultiScale(gray,1.1,4)
+    if len(faces)==0:
         alert = "⚠️ No Person Detected"
 
+    # Roboflow object detection
     _, enc = cv2.imencode('.jpg', frame)
     try:
         resp = requests.post(
-            f"https://detect.roboflow.com/{'interview-dxisb/3'}",
-            files={"file": enc.tobytes()},
-            params={"api_key": 'ATCth3RHKPljJdY3UmHL', "confidence": 50, "overlap": 30}
+          f"https://detect.roboflow.com/{'interview-dxisb/3'}",
+          files={"file": enc.tobytes()},
+          params={"api_key":'ATCth3RHKPljJdY3UmHL',"confidence":50,"overlap":30}
         ).json()
-        for obj in resp.get("predictions", []):
+        for obj in resp.get("predictions",[]):
             c = obj["confidence"]
-            area = obj["width"] * obj["height"]
-            if c >= 0.7 and area >= 2000:
+            area = obj["width"]*obj["height"]
+            if c>=0.7 and area>=2000:
                 alert = f"⚠️ Suspicious Object: {obj['class']}"
                 break
     except:
         pass
 
+    # Broadcast alert to everyone in the room
     socketio.emit('fraud-alert', {'message': alert}, room=room)
-    return ('', 204)
-
-
-# ─── Helper Functions ───────────────────────────────────────────────────────
-
-def send_otp_email(to_email, otp):
-    msg = MIMEMultipart()
-    msg['From'] = EMAIL_USER
-    msg['To'] = to_email
-    msg['Subject'] = 'Your OTP for Registration'
-
-    body = f"Your OTP is: {otp}"
-    msg.attach(MIMEText(body, 'plain'))
-
-    try:
-        with smtplib.SMTP('smtp.gmail.com', 587) as server:
-            server.starttls()
-            server.login(EMAIL_USER, EMAIL_PASSWORD)
-            text = msg.as_string()
-            server.sendmail(EMAIL_USER, to_email, text)
-    except Exception as e:
-        print("Error sending email:", e)
-
+    return ('',204)
 
 # ─── Run ────────────────────────────────────────────────────────────────────
 
