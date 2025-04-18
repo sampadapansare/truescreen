@@ -1,113 +1,190 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Real-Time Fraud Detection</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <!-- BOOTSTRAP CSS -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Real-Time Fraud Detection</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+
+<!-- BOOTSTRAP -->
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-<!-- BOOTSTRAP JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
-
 <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
-  <script>
-    let socket, pc;
-    const room = "{{ meeting_id }}";
 
-    async function init() {
-      socket = io();
-
-      // 1) join signaling room
-      socket.emit('join-room', {room});
-
-      // 2) getUserMedia
-      const localStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-      document.getElementById('localVideo').srcObject = localStream;
-
-      // 3) WebRTC peer connection
-      pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-      localStream.getTracks().forEach(t=>pc.addTrack(t, localStream));
-
-      pc.onicecandidate = e => {
-        if(e.candidate) {
-          socket.emit('signal',{room, candidate:e.candidate});
-        }
-      };
-      pc.ontrack = e => {
-        document.getElementById('remoteVideo').srcObject = e.streams[0];
-      };
-
-      // 4) signaling handlers
-      socket.on('user-joined', async ()=> {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit('signal',{room, offer});
-      });
-      socket.on('signal', async data => {
-        if(data.offer) {
-          await pc.setRemoteDescription(data.offer);
-          const ans = await pc.createAnswer();
-          await pc.setLocalDescription(ans);
-          socket.emit('signal',{room, answer:ans});
-        }
-        if(data.answer) {
-          await pc.setRemoteDescription(data.answer);
-        }
-        if(data.candidate) {
-          await pc.addIceCandidate(data.candidate);
-        }
-      });
-
-      // 5) start fraud detection loop
-      setInterval(captureAndDetect, 2000);
-    }
-
-    async function captureAndDetect() {
-      const video = document.getElementById('localVideo');
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-      canvas.getContext('2d').drawImage(video,0,0);
-      canvas.toBlob(blob => {
-        const form = new FormData();
-        form.append('frame', blob, 'frame.jpg');
-        form.append('room', room);
-        fetch('/detect',{method:'POST',body:form});
-      },'image/jpeg',0.7);
-    }
-
-    window.onload = () => {
-      init();
-
-      // 6) listen for fraud alerts
-      socket.on('fraud-alert', data => {
-        document.getElementById('alert-box').innerText = data.message;
-      });
-    };
-  </script>
-  <style>
-    /* keep your existing styles… */
-  </style>
+<style>
+/* Add spacing below control buttons */
+.control-buttons {
+margin-bottom: 15px;
+}
+</style>
 </head>
 <body>
-  <div class="navbar">
-    <div class="brand">Truescreen</div>
-    <a href="{{ url_for('logout') }}" class="logout">Logout</a>
-  </div>
+<div class="navbar">
+<div class="brand">TrueScreen</div>
+<a href="{{ url_for('logout') }}" class="logout">Logout</a>
+</div>
 
-  <div class="container video-page text-center">
-    <h2>Meeting ID: {{ meeting_id }}</h2>
-    <div id="alert-box" class="alert"></div>
+<div class="container video-page text-center">
+<h2>Meeting ID: {{ meeting_id }}</h2>
+<div id="alert-box" class="alert"></div>
 
-    <div class="d-flex justify-content-center align-items-start">
-      <!-- Local Preview -->
-      <video id="localVideo" autoplay muted playsinline
-             style="width:45%;border:3px solid #2f3640;border-radius:8px;"></video>
-      <!-- Remote Feed -->
-      <video id="remoteVideo" autoplay playsinline
-             style="width:45%;border:3px solid #2f3640;border-radius:8px;margin-left:20px;"></video>
-    </div>
-  </div>
+<!-- 🎛️ Control Buttons -->
+<div class="control-buttons">
+<button class="btn btn-primary" onclick="toggleMic()">🎤 Mute/Unmute</button>
+<button class="btn btn-secondary" onclick="toggleCamera()">📷 Camera On/Off</button>
+</div>
+
+<div class="d-flex justify-content-center align-items-start flex-wrap">
+<!-- Local Preview -->
+<video id="localVideo" autoplay muted playsinline
+style="width:45%;border:3px solid #2f3640;border-radius:8px;"></video>
+
+<!-- Remote Feeds will be appended here dynamically -->
+<div id="remoteContainer" style="display: flex; flex-wrap: wrap;"></div>
+</div>
+</div>
+
+<script>
+const socket = io();
+const room = "{{ meeting_id }}";
+const localVideo = document.getElementById('localVideo');
+const remoteContainer = document.getElementById('remoteContainer');
+const peers = {};
+let localStream;
+let micOn = true;
+let camOn = true;
+
+async function init() {
+socket.emit('join-room', { room });
+localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+localVideo.srcObject = localStream;
+
+socket.on('user-joined', ({ sid }) => {
+const pc = createPeerConnection(sid);
+peers[sid] = pc;
+localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+pc.createOffer().then(offer => {
+pc.setLocalDescription(offer);
+socket.emit('signal', { type: 'offer', offer, to: sid, room });
+});
+});
+
+socket.on('signal', async ({ type, offer, answer, candidate, from }) => {
+let pc = peers[from];
+if (!pc) {
+pc = createPeerConnection(from);
+peers[from] = pc;
+localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+}
+
+if (type === 'offer') {
+await pc.setRemoteDescription(new RTCSessionDescription(offer));
+const ans = await pc.createAnswer();
+await pc.setLocalDescription(ans);
+socket.emit('signal', { type: 'answer', answer: ans, to: from, room });
+} else if (type === 'answer') {
+await pc.setRemoteDescription(new RTCSessionDescription(answer));
+} else if (type === 'candidate') {
+await pc.addIceCandidate(new RTCIceCandidate(candidate));
+}
+});
+
+setInterval(captureAndDetect, 2000);
+}
+
+function createPeerConnection(id) {
+const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+
+pc.onicecandidate = e => {
+if (e.candidate) {
+socket.emit('signal', { type: 'candidate', candidate: e.candidate, to: id, room });
+}
+};
+
+pc.ontrack = e => {
+const remoteVideo = document.getElementById(`remote-${id}`) || createRemoteVideo(id);
+remoteVideo.srcObject = e.streams[0];
+};
+
+return pc;
+}
+
+function createRemoteVideo(id) {
+const video = document.createElement('video');
+video.id = `remote-${id}`;
+video.autoplay = true;
+video.playsInline = true;
+video.style = 'width:45%; border:3px solid #2f3640; border-radius:8px; margin:10px;';
+remoteContainer.appendChild(video);
+return video;
+}
+
+async function captureAndDetect() {
+const video = document.getElementById('localVideo');
+const canvas = document.createElement('canvas');
+canvas.width = video.videoWidth;
+canvas.height = video.videoHeight;
+canvas.getContext('2d').drawImage(video, 0, 0);
+canvas.toBlob(blob => {
+const form = new FormData();
+form.append('frame', blob, 'frame.jpg');
+form.append('room', room);
+fetch('/detect', { method: 'POST', body: form });
+}, 'image/jpeg', 0.7);
+}
+
+// 🔊 Toggle mic
+function toggleMic() {
+micOn = !micOn;
+localStream.getAudioTracks().forEach(track => track.enabled = micOn);
+}
+
+// 📷 Toggle camera
+function toggleCamera() {
+camOn = !camOn;
+localStream.getVideoTracks().forEach(track => track.enabled = camOn);
+}
+
+window.onload = () => {
+init();
+socket.on('fraud-alert', data => {
+document.getElementById('alert-box').innerText = data.message;
+});
+};
+
+// Tab switching detection
+let tabSwitchCount = 0;
+document.addEventListener('visibilitychange', () => {
+if (document.hidden) {
+tabSwitchCount++;
+socket.emit('tab_switched', {
+username: "{{ username }}",
+count: tabSwitchCount
+});
+}
+});
+
+window.addEventListener('blur', () => {
+tabSwitchCount++;
+socket.emit('tab_switched', {
+username: "{{ username }}",
+count: tabSwitchCount
+});
+});
+
+socket.on('tab_switch_warning', data => {
+const warning = document.createElement('div');
+warning.innerText = '⚠️ Tab switch detected! Stay on the interview tab.';
+warning.style = 'background: red; color: white; position: fixed; top: 10px; left: 10px; padding: 10px; z-index: 9999;';
+document.body.appendChild(warning);
+
+setTimeout(() => {
+warning.remove();
+}, 3000);
+});
+</script>
 </body>
 </html>
+
