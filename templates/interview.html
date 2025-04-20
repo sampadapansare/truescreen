@@ -1,18 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Real-Time Fraud Detection</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+
+<!-- BOOTSTRAP -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+
+<style>
+/* Add spacing below control buttons */
+.control-buttons {
+  margin-bottom: 15px;
+}
+</style>
+</head>
+<body>
+<div class="navbar">
+  <div class="brand">TrueScreen</div>
+  <a href="{{ url_for('logout') }}" class="logout">Logout</a>
+</div>
+
+<div class="container video-page text-center">
+  <h2>Meeting ID: {{ meeting_id }}</h2>
+  <div id="alert-box" class="alert"></div>
+
+  <!-- 🎛️ Control Buttons -->
+  <div class="control-buttons">
+    <button class="btn btn-primary" onclick="toggleMic()">🎤 Mute/Unmute</button>
+    <button class="btn btn-secondary" onclick="toggleCamera()">📷 Camera On/Off</button>
+  </div>
+
+  <div class="d-flex justify-content-center align-items-start flex-wrap">
+    <!-- Local Preview -->
+    <video id="localVideo" autoplay muted playsinline
+      style="width:45%;border:3px solid #2f3640;border-radius:8px;"></video>
+
+    <!-- Remote Feeds will be appended here dynamically -->
+    <div id="remoteContainer" style="display: flex; flex-wrap: wrap;"></div>
+  </div>
+</div>
+
 <script>
 const socket = io();
 const room = "{{ meeting_id }}";
-const role = "candidate";  // ⚠️ CHANGE THIS to "interviewer" or "candidate"
 const localVideo = document.getElementById('localVideo');
 const remoteContainer = document.getElementById('remoteContainer');
-const alertBox = document.getElementById('alert-box');
 const peers = {};
 let localStream;
 let micOn = true;
 let camOn = true;
 
 async function init() {
-  socket.emit('join-room', { room, role });
-
+  socket.emit('join-room', { room });
   localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
   localVideo.srcObject = localStream;
 
@@ -47,19 +91,7 @@ async function init() {
     }
   });
 
-  socket.on('fraud-alert', ({ message }) => {
-    if (message) {
-      alertBox.textContent = message;
-      alertBox.classList.add("alert-danger");
-    } else {
-      alertBox.textContent = '';
-      alertBox.classList.remove("alert-danger");
-    }
-  });
-
-  if (role === 'candidate') {
-    setInterval(captureAndDetect, 2000);
-  }
+  setInterval(captureAndDetect, 2000);
 }
 
 function createPeerConnection(id) {
@@ -103,11 +135,13 @@ async function captureAndDetect() {
   }, 'image/jpeg', 0.7);
 }
 
+// 🔊 Toggle mic
 function toggleMic() {
   micOn = !micOn;
   localStream.getAudioTracks().forEach(track => track.enabled = micOn);
 }
 
+// 📷 Toggle camera
 function toggleCamera() {
   camOn = !camOn;
   localStream.getVideoTracks().forEach(track => track.enabled = camOn);
@@ -115,5 +149,43 @@ function toggleCamera() {
 
 window.onload = () => {
   init();
+  socket.on('fraud-alert', data => {
+    if ("{{ session.get('role') }}" === 'interviewer') {
+      document.getElementById('alert-box').innerText = data.message;
+    }
+  });
 };
+
+// Tab switching detection
+let tabSwitchCount = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    tabSwitchCount++;
+    socket.emit('tab_switched', {
+      username: "{{ username }}",
+      count: tabSwitchCount
+    });
+  }
+});
+
+window.addEventListener('blur', () => {
+  tabSwitchCount++;
+  socket.emit('tab_switched', {
+    username: "{{ username }}",
+    count: tabSwitchCount
+  });
+});
+
+socket.on('tab_switch_warning', data => {
+  const warning = document.createElement('div');
+  warning.innerText = '⚠️ Tab switch detected! Stay on the interview tab.';
+  warning.style = 'background: red; color: white; position: fixed; top: 10px; left: 10px; padding: 10px; z-index: 9999;';
+  document.body.appendChild(warning);
+
+  setTimeout(() => {
+    warning.remove();
+  }, 3000);
+});
 </script>
+</body>
+</html>
