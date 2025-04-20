@@ -13,7 +13,7 @@ app.permanent_session_lifetime = timedelta(days=7)
 socketio = SocketIO(app)
 
 # In‑memory stores
-users = {}            # username → password
+users = {}            # email → password
 meetings = set()      # active meeting IDs
 
 # Face cascade
@@ -34,16 +34,14 @@ def home():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        u = request.form['username']
-        p = request.form['password']
+        email = request.form['email']
+        password = request.form['password']
         
-        # Check if user already exists
-        if u in users:
-            flash("Username already exists!", "error")
+        if email in users:
+            flash("Email already exists! Please log in.", "error")
             return redirect(url_for('login'))
 
-        # Save the new user
-        users[u] = p
+        users[email] = password
         flash("Registration successful! Please log in.", "success")
         return redirect(url_for('login'))
     
@@ -52,36 +50,34 @@ def register():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        u = request.form['username']
-        p = request.form['password']
+        email = request.form['email']
+        password = request.form['password']
         remember = request.form.get('remember')
 
-        # Check if the username exists and password matches
-        if users.get(u) == p:
+        if users.get(email) == password:
             session.permanent = bool(remember)
-            session['username'] = u
+            session['email'] = email
             flash("Logged in successfully!", "success")
             return redirect(url_for('dashboard'))
         
-        # Show an error message if login fails
-        flash("Invalid credentials. Please try again.", "error")
+        flash("Invalid email or password. Try again.", "error")
         return render_template('login.html')
 
-    # If the user is already logged in, redirect to the dashboard
-    if 'username' in session:
+    if 'email' in session:
         return redirect(url_for('dashboard'))
     
     return render_template('login.html')
 
 @app.route('/dashboard')
 def dashboard():
-    if 'username' not in session:
+    if 'email' not in session:
+        flash("You need to log in first.", "error")
         return redirect(url_for('login'))
-    return render_template('dashboard.html', username=session['username'])
+    return render_template('dashboard.html', email=session['email'])
 
 @app.route('/schedule')
 def schedule():
-    if 'username' not in session:
+    if 'email' not in session:
         return redirect(url_for('login'))
     m = str(uuid.uuid4())[:8]
     meetings.add(m)
@@ -89,7 +85,7 @@ def schedule():
 
 @app.route('/join', methods=['GET', 'POST'])
 def join():
-    if 'username' not in session:
+    if 'email' not in session:
         return redirect(url_for('login'))
     error = None
     if request.method == 'POST':
@@ -101,7 +97,7 @@ def join():
 
 @app.route('/interview/<meeting_id>')
 def interview(meeting_id):
-    if 'username' not in session:
+    if 'email' not in session:
         return redirect(url_for('login'))
     if meeting_id not in meetings:
         return redirect(url_for('join'))
@@ -109,8 +105,8 @@ def interview(meeting_id):
 
 @app.route('/logout')
 def logout():
-    session.pop('username', None)
-    flash("You have logged out successfully.", "info")
+    session.pop('email', None)
+    flash("Logged out successfully.", "info")
     return redirect(url_for('login'))
 
 # ─── WebRTC Signaling ────────────────────────────────────────────────────────
