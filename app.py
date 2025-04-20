@@ -1,5 +1,5 @@
-from flask import Flask, render_template, request, redirect, url_for, session
-from flask_socketio import SocketIO, join_room, emit 
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask_socketio import SocketIO, join_room, emit
 import cv2
 import numpy as np
 import requests
@@ -31,30 +31,46 @@ ROBOFLOW_MODEL_ID = "interview-dxisb/3"
 def home():
     return redirect(url_for('login'))
 
-@app.route('/register', methods=['GET','POST'])
+@app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
         u = request.form['username']
         p = request.form['password']
+        
+        # Check if user already exists
+        if u in users:
+            flash("Username already exists!", "error")
+            return redirect(url_for('login'))
+
+        # Save the new user
         users[u] = p
+        flash("Registration successful! Please log in.", "success")
         return redirect(url_for('login'))
+    
     return render_template('register.html')
 
-@app.route('/login', methods=['GET','POST'])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         u = request.form['username']
         p = request.form['password']
         remember = request.form.get('remember')
 
+        # Check if the username exists and password matches
         if users.get(u) == p:
             session.permanent = bool(remember)
             session['username'] = u
+            flash("Logged in successfully!", "success")
             return redirect(url_for('dashboard'))
-        return render_template('login.html', error="Invalid credentials")
+        
+        # Show an error message if login fails
+        flash("Invalid credentials. Please try again.", "error")
+        return render_template('login.html')
 
+    # If the user is already logged in, redirect to the dashboard
     if 'username' in session:
         return redirect(url_for('dashboard'))
+    
     return render_template('login.html')
 
 @app.route('/dashboard')
@@ -71,7 +87,7 @@ def schedule():
     meetings.add(m)
     return render_template('schedule.html', meeting_id=m)
 
-@app.route('/join', methods=['GET','POST'])
+@app.route('/join', methods=['GET', 'POST'])
 def join():
     if 'username' not in session:
         return redirect(url_for('login'))
@@ -94,6 +110,7 @@ def interview(meeting_id):
 @app.route('/logout')
 def logout():
     session.pop('username', None)
+    flash("You have logged out successfully.", "info")
     return redirect(url_for('login'))
 
 # ─── WebRTC Signaling ────────────────────────────────────────────────────────
