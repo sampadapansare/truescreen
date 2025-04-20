@@ -9,7 +9,7 @@ from datetime import timedelta
 
 app = Flask(__name__)
 app.secret_key = 'f283f91a99edbc930fd3fd47c592fc33bdc1b8d7e7d0765a'
-app.permanent_session_lifetime = timedelta(days=7)  # Session lifetime for "Remember Me"
+app.permanent_session_lifetime = timedelta(days=7)
 socketio = SocketIO(app)
 
 # In‑memory stores
@@ -17,8 +17,9 @@ users = {}            # username → password
 meetings = set()      # active meeting IDs
 
 # Face cascade
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades +
-    'haarcascade_frontalface_default.xml')
+face_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+)
 
 # Roboflow config
 ROBOFLOW_API_KEY = "ATCth3RHKPljJdY3UmHL"
@@ -32,7 +33,7 @@ def home():
 
 @app.route('/register', methods=['GET','POST'])
 def register():
-    if request.method=='POST':
+    if request.method == 'POST':
         u = request.form['username']
         p = request.form['password']
         users[u] = p
@@ -44,15 +45,14 @@ def login():
     if request.method == 'POST':
         u = request.form['username']
         p = request.form['password']
-        remember = request.form.get('remember')  # checkbox value
+        remember = request.form.get('remember')
 
         if users.get(u) == p:
-            session.permanent = True if remember else False
+            session.permanent = bool(remember)
             session['username'] = u
             return redirect(url_for('dashboard'))
         return render_template('login.html', error="Invalid credentials")
 
-    # Auto-login if already in session
     if 'username' in session:
         return redirect(url_for('dashboard'))
     return render_template('login.html')
@@ -120,16 +120,20 @@ def detect():
 
     alert = ""
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray,1.1,4)
-    if len(faces)==0:
+    faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+    if len(faces) == 0:
         alert = "⚠️ No Person Detected"
 
     _, enc = cv2.imencode('.jpg', frame)
     try:
         resp = requests.post(
-          f"https://detect.roboflow.com/{ROBOFLOW_MODEL_ID}",
-          files={"file": enc.tobytes()},
-          params={"api_key": ROBOFLOW_API_KEY, "confidence":50, "overlap":30}
+            f"https://detect.roboflow.com/{ROBOFLOW_MODEL_ID}",
+            files={"file": enc.tobytes()},
+            params={
+                "api_key": ROBOFLOW_API_KEY,
+                "confidence": 50,
+                "overlap": 30
+            }
         ).json()
         for obj in resp.get("predictions", []):
             c = obj["confidence"]
@@ -143,8 +147,7 @@ def detect():
     socketio.emit('fraud-alert', {'message': alert}, room=room)
     return ('', 204)
 
-# ─── Run ────────────────────────────────────────────────────────────────────
+# ─── Run ──────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
-
