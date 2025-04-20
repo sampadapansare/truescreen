@@ -102,7 +102,7 @@
       <h2>Login</h2>
       <form method="POST">
         <input type="text" name="username" placeholder="Enter your username" value="{{ request.form['username'] if request.form.get('username') else '' }}" required />
-        <input type="password" name="password" placeholder="Enter your password" required />
+        <input type="password" name="password" placeholder="Enter your password" value="{{ request.form['password'] if request.form.get('password') else '' }}" required />
 
         <div class="remember-row">
           <input type="checkbox" id="remember" name="remember" />
