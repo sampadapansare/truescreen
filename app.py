@@ -124,7 +124,7 @@ def detect():
         resp = requests.post(
             f"https://detect.roboflow.com/{ROBOFLOW_MODEL_ID}",
             files={"file": enc.tobytes()},
-            params={"api_key": ROBOFLOW_API_KEY, "confidence":50, "overlap":30}
+            params={"api_key": ROBOFLOW_API_KEY, "confidence": 50, "overlap": 30}
         ).json()
         for obj in resp.get("predictions", []):
             c = obj["confidence"]
@@ -132,13 +132,14 @@ def detect():
             if c >= 0.7 and area >= 2000:
                 alert = f"⚠️ Suspicious Object: {obj['class']}"
                 break
-    except:
-        pass
+    except Exception as e:
+        print(f"Error in Roboflow request: {e}")
 
-    # Only emit to interviewers
+    # Emit the fraud alert only to interviewers (schedulers)
     for sid, info in user_roles.items():
         if info['room'] == room and info['role'] == 'interviewer':
             socketio.emit('fraud-alert', {'message': alert}, room=sid)
+
     return ('', 204)
 
 if __name__ == '__main__':
