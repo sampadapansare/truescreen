@@ -12,20 +12,20 @@ app.secret_key = 'f283f91a99edbc930fd3fd47c592fc33bdc1b8d7e7d0765a'
 app.permanent_session_lifetime = timedelta(days=7)
 socketio = SocketIO(app)
 
-# In‑memory stores
-users = {}            # email → password
+# In‑memory user store
+users = {}            # username → password
 meetings = set()      # active meeting IDs
 
-# Face cascade
+# Face detection
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
 )
 
-# Roboflow config
+# Roboflow Config
 ROBOFLOW_API_KEY = "ATCth3RHKPljJdY3UmHL"
 ROBOFLOW_MODEL_ID = "interview-dxisb/3"
 
-# ─── Auth & Meeting Routes ───────────────────────────────────────────────────
+# ─── Routes ───────────────────────────────────────────────────────────────────
 
 @app.route('/')
 def home():
@@ -34,50 +34,41 @@ def home():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        email = request.form['email']
-        password = request.form['password']
-        
-        if email in users:
-            flash("Email already exists! Please log in.", "error")
+        u = request.form['username']
+        p = request.form['password']
+        if u in users:
+            flash("Username already exists!", "error")
             return redirect(url_for('login'))
-
-        users[email] = password
-        flash("Registration successful! Please log in.", "success")
+        users[u] = p
+        flash("Registered! Please log in.", "success")
         return redirect(url_for('login'))
-    
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        email = request.form['email']
-        password = request.form['password']
+        u = request.form['username']
+        p = request.form['password']
         remember = request.form.get('remember')
-
-        if users.get(email) == password:
+        if users.get(u) == p:
             session.permanent = bool(remember)
-            session['email'] = email
-            flash("Logged in successfully!", "success")
+            session['username'] = u
+            flash("Login successful!", "success")
             return redirect(url_for('dashboard'))
-        
-        flash("Invalid email or password. Try again.", "error")
-        return render_template('login.html')
-
-    if 'email' in session:
+        flash("Invalid credentials.", "error")
+    if 'username' in session:
         return redirect(url_for('dashboard'))
-    
     return render_template('login.html')
 
 @app.route('/dashboard')
 def dashboard():
-    if 'email' not in session:
-        flash("You need to log in first.", "error")
+    if 'username' not in session:
         return redirect(url_for('login'))
-    return render_template('dashboard.html', email=session['email'])
+    return render_template('dashboard.html', username=session['username'])
 
 @app.route('/schedule')
 def schedule():
-    if 'email' not in session:
+    if 'username' not in session:
         return redirect(url_for('login'))
     m = str(uuid.uuid4())[:8]
     meetings.add(m)
@@ -85,7 +76,7 @@ def schedule():
 
 @app.route('/join', methods=['GET', 'POST'])
 def join():
-    if 'email' not in session:
+    if 'username' not in session:
         return redirect(url_for('login'))
     error = None
     if request.method == 'POST':
@@ -97,15 +88,13 @@ def join():
 
 @app.route('/interview/<meeting_id>')
 def interview(meeting_id):
-    if 'email' not in session:
+    if 'username' not in session or meeting_id not in meetings:
         return redirect(url_for('login'))
-    if meeting_id not in meetings:
-        return redirect(url_for('join'))
     return render_template('interview.html', meeting_id=meeting_id)
 
 @app.route('/logout')
 def logout():
-    session.pop('email', None)
+    session.pop('username', None)
     flash("Logged out successfully.", "info")
     return redirect(url_for('login'))
 
@@ -119,10 +108,9 @@ def on_join(data):
 
 @socketio.on('signal')
 def on_signal(data):
-    room = data['room']
-    emit('signal', data, room=room, include_self=False)
+    emit('signal', data, room=data['room'], include_self=False)
 
-# ─── Fraud Detection Endpoint ────────────────────────────────────────────────
+# ─── Fraud Detection ─────────────────────────────────────────────────────────
 
 @app.route('/detect', methods=['POST'])
 def detect():
@@ -142,16 +130,10 @@ def detect():
         resp = requests.post(
             f"https://detect.roboflow.com/{ROBOFLOW_MODEL_ID}",
             files={"file": enc.tobytes()},
-            params={
-                "api_key": ROBOFLOW_API_KEY,
-                "confidence": 50,
-                "overlap": 30
-            }
+            params={"api_key": ROBOFLOW_API_KEY, "confidence": 50, "overlap": 30}
         ).json()
         for obj in resp.get("predictions", []):
-            c = obj["confidence"]
-            area = obj["width"] * obj["height"]
-            if c >= 0.7 and area >= 2000:
+            if obj["confidence"] >= 0.7 and obj["width"] * obj["height"] >= 2000:
                 alert = f"⚠️ Suspicious Object: {obj['class']}"
                 break
     except:
@@ -160,7 +142,7 @@ def detect():
     socketio.emit('fraud-alert', {'message': alert}, room=room)
     return ('', 204)
 
-# ─── Run ──────────────────────────────────────────────────────────────────────
+# ─── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
