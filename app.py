@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, session
-from flask_socketio import SocketIO, join_room, emit 
+from flask_socketio import SocketIO, join_room, emit
 import cv2
 import numpy as np
 import requests
@@ -102,12 +102,18 @@ def logout():
 def on_join(data):
     room = data['room']
     join_room(room)
-    emit('user-joined', {'sid': request.sid}, room=room, include_self=False)
+    emit('user-joined', {'sid': request.sid, 'username': session['username']}, room=room, include_self=False)
 
 @socketio.on('signal')
 def on_signal(data):
     room = data['room']
     emit('signal', data, room=room, include_self=False)
+
+@socketio.on('send-video')
+def on_video(data):
+    room = data['room']
+    video_data = data['video']  # The video data sent by the user (base64 encoded or similar)
+    emit('receive-video', {'sid': request.sid, 'video': video_data}, room=room, include_self=False)
 
 # ─── Fraud Detection Endpoint ────────────────────────────────────────────────
 
