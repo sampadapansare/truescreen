@@ -1,65 +1,79 @@
+/* ---------- General ---------- */
 body {
-  font-family: Arial, sans-serif;
-  background-color: #f4f7fc;
-  margin: 0;
-  padding: 0;
-}
-
-.header {
-  position: absolute;
-  top: 20px;
-  left: 20px;
-  font-size: 24px;
-  font-weight: bold;
-  color: #4CAF50;
-}
-
-.container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-}
-
-.card {
-  width: 300px;
-  height: 300px;
-  padding: 20px;
-  border-radius: 10px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  background-color: white;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-}
-
-.form-label {
-  margin-bottom: 5px;
-}
-
-.form-control {
-  margin-bottom: 15px;
-  padding: 10px;
-  width: 100%;
-  border-radius: 5px;
-  border: 1px solid #ddd;
-}
-
-.btn-primary {
-  width: 100%;
-  padding: 10px;
-  background-color: #4CAF50;
-  color: white;
-  border: none;
-  border-radius: 5px;
-}
-
-.btn-primary:hover {
-  background-color: #45a049;
-}
-
-.alert {
-  margin-top: 10px;
-}
+    margin: 0;
+    font-family: 'Segoe UI', sans-serif;
+    background: #f5f6fa;
+  }
+  
+  /* ---------- Navbar ---------- */
+  .navbar {
+    background-color: #2f3640;
+    color: #fff;
+    padding: 15px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .navbar .brand {
+    font-size: 1.4em;
+    font-weight: bold;
+  }
+  .navbar .logout {
+    background-color: #e84118;
+    color: #fff;
+    padding: 8px 15px;
+    text-decoration: none;
+    border-radius: 5px;
+    font-size: 0.9em;
+  }
+  .navbar .logout:hover {
+    background-color: #c23616;
+  }
+  
+  /* ---------- Video Page ---------- */
+  .video-page {
+    text-align: center;
+    padding: 20px;
+  }
+  .video-page h2 {
+    color: #2f3640;
+    margin-bottom: 15px;
+  }
+  .alert {
+    font-size: 18px;
+    font-weight: bold;
+    color: #fff;
+    background-color: #e74c3c;
+    padding: 10px 20px;
+    margin: 15px auto;
+    display: inline-block;
+    border-radius: 8px;
+  }
+  
+  /* ---------- Video & Preview ---------- */
+  .video-container {
+    position: relative;
+    display: inline-block;
+  }
+  #webcam {
+    width: 640px;
+    height: 480px;
+    border: 5px solid #2f3640;
+    border-radius: 10px;
+  }
+  .preview-container {
+    position: absolute;
+    bottom: 15px;
+    right: 15px;
+    width: 160px;
+    height: 120px;
+    overflow: hidden;
+    border: 3px solid #fff;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.2);
+  }
+  #preview {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
