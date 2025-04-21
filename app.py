@@ -69,7 +69,7 @@ def schedule():
         return redirect(url_for('login'))
     m = str(uuid.uuid4())[:8]
     meetings.add(m)
-    return render_template('schedule.html', meeting_id=m)
+    return redirect(url_for('interview', meeting_id=m))  # 🚀 Redirects to the video call room
 
 @app.route('/join', methods=['GET','POST'])
 def join():
