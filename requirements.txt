@@ -1,6 +1,6 @@
-Flask
-Flask-SocketIO
-eventlet
-opencv-python
-numpy
-requests
+Flask==2.2.3
+Flask-SocketIO==5.3.0
+opencv-python==4.5.5.64
+requests==2.26.0
+numpy==1.23.4
+
