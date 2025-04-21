@@ -7,18 +7,6 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-  <style>
-    video {
-      width: 100%;
-      border: 2px solid #343a40;
-      border-radius: 8px;
-    }
-    #alert-box {
-      margin-top: 1rem;
-      font-weight: bold;
-      color: red;
-    }
-  </style>
 </head>
 <body>
   <nav class="navbar navbar-dark bg-dark">
@@ -32,70 +20,66 @@
     <div class="row justify-content-center">
       <div class="col-md-5">
         <h5>You</h5>
-        <video id="localVideo" autoplay muted playsinline></video>
+        <video id="localVideo" autoplay muted class="border border-dark rounded" width="100%"></video>
       </div>
       <div class="col-md-5">
         <h5>Other Participant</h5>
-        <video id="remoteVideo" autoplay playsinline></video>
+        <video id="remoteVideo" autoplay class="border border-dark rounded" width="100%"></video>
       </div>
     </div>
-    <div id="alert-box"></div>
   </div>
 
   <script>
     const socket = io();
-    const room = "{{ meeting_id }}";
-    let peerConnection;
-    let localStream;
+    const roomId = "{{ room_id }}";  // Flask should pass this in render_template
 
+    let localStream, peerConnection;
     const config = {
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     };
 
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
-    const alertBox = document.getElementById("alert-box");
 
-    async function startVideo() {
+    async function init() {
       localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       localVideo.srcObject = localStream;
-      socket.emit('join-room', { room });
+      socket.emit('join', roomId);
     }
 
-    socket.on('user-joined', ({ sid, username }) => {
+    socket.on('joined', () => {
       createPeer(true);
     });
 
-    socket.on('signal', async (data) => {
-      const msg = data.signal;
+    socket.on('other-joined', () => {
+      createPeer(false);
+    });
 
-      if (msg.type === "offer") {
-        createPeer(false);
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(msg));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit('signal', { room, signal: answer });
-      }
+    socket.on('offer', async (offer) => {
+      if (!peerConnection) createPeer(false);
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      socket.emit('answer', answer, roomId);
+    });
 
-      if (msg.type === "answer") {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(msg));
-      }
+    socket.on('answer', async (answer) => {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    });
 
-      if (msg.candidate) {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(msg.candidate));
+    socket.on('candidate', async (candidate) => {
+      if (peerConnection) {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
       }
     });
 
     function createPeer(isInitiator) {
       peerConnection = new RTCPeerConnection(config);
-
-      localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-      });
+      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          socket.emit('signal', { room, signal: { candidate: event.candidate } });
+          socket.emit('candidate', event.candidate, roomId);
         }
       };
 
@@ -104,40 +88,14 @@
       };
 
       if (isInitiator) {
-        peerConnection.createOffer().then(offer => {
+        peerConnection.createOffer().then((offer) => {
           peerConnection.setLocalDescription(offer);
-          socket.emit('signal', { room, signal: offer });
+          socket.emit('offer', offer, roomId);
         });
       }
     }
 
-    // Fraud detection using image snapshots
-    setInterval(() => {
-      if (localStream) {
-        const canvas = document.createElement('canvas');
-        const video = localVideo;
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        canvas.toBlob(blob => {
-          const formData = new FormData();
-          formData.append('room', room);
-          formData.append('frame', blob);
-
-          fetch('/detect', {
-            method: 'POST',
-            body: formData
-          });
-        }, 'image/jpeg');
-      }
-    }, 3000); // every 3 seconds
-
-    socket.on('fraud-alert', (data) => {
-      alertBox.textContent = data.message || "";
-    });
-
-    startVideo();
+    init();
   </script>
 </body>
 </html>
