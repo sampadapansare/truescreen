@@ -7,7 +7,7 @@ import uuid
 import os
 from datetime import timedelta
 
-app = Flask(__name__)
+app = Flask(__name__) 
 app.secret_key = 'f283f91a99edbc930fd3fd47c592fc33bdc1b8d7e7d0765a'
 app.permanent_session_lifetime = timedelta(days=7)
 socketio = SocketIO(app)
