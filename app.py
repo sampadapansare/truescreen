@@ -7,7 +7,7 @@ import uuid
 import os
 from datetime import timedelta
 
-app = Flask(__name__) 
+app = Flask(__name__)
 app.secret_key = 'f283f91a99edbc930fd3fd47c592fc33bdc1b8d7e7d0765a'
 app.permanent_session_lifetime = timedelta(days=7)
 socketio = SocketIO(app)
@@ -153,7 +153,5 @@ def detect():
     socketio.emit('fraud-alert', {'message': alert}, room=room)
     return ('', 204)
 
-# ─── Run ──────────────────────────────────────────────────────────────────────
-
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
+    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)  # Remove this line later for production with Gunicorn
