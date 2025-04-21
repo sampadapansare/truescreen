@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 app = Flask(__name__)
-app.secret_key = 'super_secret_key'
+app.secret_key = 'f283f91a99edbc930fd3fd47c592fc33bdc1b8d7e7d0765a'
 socketio = SocketIO(app)
 
 # Dummy user store
