@@ -31,9 +31,10 @@
 
   <script>
     const socket = io();
-    const roomId = "{{ room_id }}";  // Flask should pass this in render_template
+    const roomId = "{{ room_id }}";
 
-    let localStream, peerConnection;
+    let localStream;
+    let peerConnection;
     const config = {
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     };
@@ -41,58 +42,84 @@
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
 
+    // Setup local stream first
     async function init() {
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      localVideo.srcObject = localStream;
-      socket.emit('join', roomId);
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
+        socket.emit("join", roomId);
+      } catch (err) {
+        console.error("Could not get user media", err);
+      }
     }
 
-    socket.on('joined', () => {
-      createPeer(true);
+    socket.on("joined", () => {
+      console.log("Joined room, waiting for other participant...");
     });
 
-    socket.on('other-joined', () => {
-      createPeer(false);
+    socket.on("other-joined", () => {
+      console.log("Other participant joined, you create the offer.");
+      createPeerConnection(true);
     });
 
-    socket.on('offer', async (offer) => {
-      if (!peerConnection) createPeer(false);
+    socket.on("offer", async (offer) => {
+      console.log("Received offer");
+      if (!peerConnection) createPeerConnection(false);
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
-      socket.emit('answer', answer, roomId);
+      socket.emit("answer", answer, roomId);
     });
 
-    socket.on('answer', async (answer) => {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-    });
-
-    socket.on('candidate', async (candidate) => {
+    socket.on("answer", async (answer) => {
+      console.log("Received answer");
       if (peerConnection) {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
       }
     });
 
-    function createPeer(isInitiator) {
-      peerConnection = new RTCPeerConnection(config);
-      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+    socket.on("candidate", async (candidate) => {
+      if (peerConnection) {
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          console.error("Error adding received ice candidate", err);
+        }
+      }
+    });
 
+    function createPeerConnection(isInitiator) {
+      peerConnection = new RTCPeerConnection(config);
+
+      // Add local tracks
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
+
+      // Send ICE candidates to other user
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          socket.emit('candidate', event.candidate, roomId);
+          socket.emit("candidate", event.candidate, roomId);
         }
       };
 
+      // When remote stream arrives
       peerConnection.ontrack = (event) => {
-        remoteVideo.srcObject = event.streams[0];
+        if (event.streams.length > 0) {
+          remoteVideo.srcObject = event.streams[0];
+        }
       };
 
+      // If you're the initiator, make the offer
       if (isInitiator) {
         peerConnection.createOffer()
           .then(offer => {
-            peerConnection.setLocalDescription(offer);
-            socket.emit('offer', offer, roomId);
-          });
+            return peerConnection.setLocalDescription(offer);
+          })
+          .then(() => {
+            socket.emit("offer", peerConnection.localDescription, roomId);
+          })
+          .catch(err => console.error("Error creating offer", err));
       }
     }
 
