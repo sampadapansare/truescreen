@@ -1,7 +1,6 @@
 Flask
-flask-socketio
-python-socketio
+Flask-SocketIO
 eventlet
 opencv-python
-requests
 numpy
+requests
