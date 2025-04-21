@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Real-Time Fraud Detection</title>
+    <title>Live Interview Room</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 
     <!-- BOOTSTRAP -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
+    <!-- Socket.IO -->
     <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
 
     <style>
-        /* Add spacing below control buttons */
         .control-buttons {
             margin-bottom: 15px;
         }
@@ -29,18 +29,14 @@
         <h2>Meeting ID: {{ meeting_id }}</h2>
         <div id="alert-box" class="alert"></div>
 
-        <!-- 🎛️ Control Buttons -->
         <div class="control-buttons">
             <button class="btn btn-primary" onclick="toggleMic()">🎤 Mute/Unmute</button>
             <button class="btn btn-secondary" onclick="toggleCamera()">📷 Camera On/Off</button>
         </div>
 
         <div class="d-flex justify-content-center align-items-start flex-wrap">
-            <!-- Local Preview -->
             <video id="localVideo" autoplay muted playsinline
-            style="width:45%;border:3px solid #2f3640;border-radius:8px;"></video>
-
-            <!-- Remote Feeds will be appended here dynamically -->
+                style="width:45%;border:3px solid #2f3640;border-radius:8px;"></video>
             <div id="remoteContainer" style="display: flex; flex-wrap: wrap;"></div>
         </div>
     </div>
@@ -48,6 +44,7 @@
     <script>
         const socket = io();
         const room = "{{ meeting_id }}";
+        const username = "{{ username }}";
         const localVideo = document.getElementById('localVideo');
         const remoteContainer = document.getElementById('remoteContainer');
         const peers = {};
@@ -56,11 +53,11 @@
         let camOn = true;
 
         async function init() {
-            socket.emit('join-room', { room });
+            socket.emit('join-room', { room, username });
+
             localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             localVideo.srcObject = localStream;
 
-            // Handle new user joining
             socket.on('user-joined', ({ sid }) => {
                 const pc = createPeerConnection(sid);
                 peers[sid] = pc;
@@ -72,7 +69,6 @@
                 });
             });
 
-            // Handle incoming signals for establishing the peer connection
             socket.on('signal', async ({ type, offer, answer, candidate, from }) => {
                 let pc = peers[from];
                 if (!pc) {
@@ -92,10 +88,24 @@
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 }
             });
+
+            socket.on('fraud-alert', data => {
+                document.getElementById('alert-box').innerText = data.message;
+            });
+
+            socket.on('tab_switch_warning', data => {
+                const warning = document.createElement('div');
+                warning.innerText = '⚠️ Tab switch detected! Stay on the interview tab.';
+                warning.style = 'background: red; color: white; position: fixed; top: 10px; left: 10px; padding: 10px; z-index: 9999;';
+                document.body.appendChild(warning);
+                setTimeout(() => warning.remove(), 3000);
+            });
         }
 
         function createPeerConnection(id) {
-            const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            const pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
 
             pc.onicecandidate = e => {
                 if (e.candidate) {
@@ -121,69 +131,31 @@
             return video;
         }
 
-        async function captureAndDetect() {
-            const video = document.getElementById('localVideo');
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext('2d').drawImage(video, 0, 0);
-            canvas.toBlob(blob => {
-                const form = new FormData();
-                form.append('frame', blob, 'frame.jpg');
-                form.append('room', room);
-                fetch('/detect', { method: 'POST', body: form });
-            }, 'image/jpeg', 0.7);
-        }
-
-        // Toggle mic
         function toggleMic() {
             micOn = !micOn;
             localStream.getAudioTracks().forEach(track => track.enabled = micOn);
         }
 
-        // Toggle camera
         function toggleCamera() {
             camOn = !camOn;
             localStream.getVideoTracks().forEach(track => track.enabled = camOn);
         }
 
-        window.onload = () => {
-            init();
-            socket.on('fraud-alert', data => {
-                document.getElementById('alert-box').innerText = data.message;
-            });
-        };
-
-        // Tab switching detection
+        // Anti-tab-switch logic
         let tabSwitchCount = 0;
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
                 tabSwitchCount++;
-                socket.emit('tab_switched', {
-                    username: "{{ username }}",
-                    count: tabSwitchCount
-                });
+                socket.emit('tab_switched', { username, count: tabSwitchCount });
             }
         });
 
         window.addEventListener('blur', () => {
             tabSwitchCount++;
-            socket.emit('tab_switched', {
-                username: "{{ username }}",
-                count: tabSwitchCount
-            });
+            socket.emit('tab_switched', { username, count: tabSwitchCount });
         });
 
-        socket.on('tab_switch_warning', data => {
-            const warning = document.createElement('div');
-            warning.innerText = '⚠️ Tab switch detected! Stay on the interview tab.';
-            warning.style = 'background: red; color: white; position: fixed; top: 10px; left: 10px; padding: 10px; z-index: 9999;';
-            document.body.appendChild(warning);
-
-            setTimeout(() => {
-                warning.remove();
-            }, 3000);
-        });
+        window.onload = init;
     </script>
 </body>
 </html>
