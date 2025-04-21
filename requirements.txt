@@ -1,7 +1,9 @@
-Flask
-Flask-SocketIO
-werkzeug
-opencv-python
-requests
-numpy
-gunicorn
+Flask==2.2.3
+Flask-SocketIO==5.3.6
+eventlet==0.33.3
+gunicorn==21.2.0
+werkzeug==2.2.3
+opencv-python==4.9.0.80
+requests==2.31.0
+numpy==1.26.4
+
