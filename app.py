@@ -4,6 +4,7 @@ import os
 import requests
 import cv2
 import numpy as np
+import uuid
 
 app = Flask(__name__)
 app.secret_key = 'f283f91a99edbc930fd3fd47c592fc33bdc1b8d7e7d0765a'
@@ -14,9 +15,7 @@ users = {}
 
 # Roboflow API settings
 ROBOFLOW_MODEL_ENDPOINT = "https://detect.roboflow.com/fraud-detection/1"
-ROBOFLOW_API_KEY = "ATCth3RHKPljJdY3UmHL"  # Your API key here
-
-# ------------------- AUTH ROUTES -------------------
+ROBOFLOW_API_KEY = "ATCth3RHKPljJdY3UmHL"
 
 @app.route('/')
 def home():
@@ -49,8 +48,6 @@ def logout():
     session.pop('user', None)
     return redirect(url_for('login'))
 
-# ------------------- PAGES -------------------
-
 @app.route('/dashboard')
 def dashboard():
     if 'user' not in session:
@@ -59,7 +56,8 @@ def dashboard():
 
 @app.route('/schedule')
 def schedule():
-    return render_template('schedule.html')
+    meeting_id = str(uuid.uuid4())
+    return render_template('schedule.html', meeting_id=meeting_id)
 
 @app.route('/join')
 def join():
@@ -73,8 +71,6 @@ def interview():
 def video():
     return render_template('video.html')
 
-# ------------------- FRAUD DETECTION -------------------
-
 @app.route('/detect', methods=['POST'])
 def detect():
     if 'image' not in request.files:
@@ -84,7 +80,6 @@ def detect():
     npimg = np.frombuffer(file.read(), np.uint8)
     img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
 
-    # Prepare image for sending to Roboflow
     _, img_encoded = cv2.imencode('.jpg', img)
     img_bytes = img_encoded.tobytes()
 
@@ -93,24 +88,19 @@ def detect():
     }
 
     response = requests.post(
-        ROBOFLOW_MODEL_ENDPOINT,
-        files={"file": img_bytes},
+        ROBOFLOW_MODEL_ENDPOINT, 
+        files={"file": img_bytes}, 
         headers=headers
     )
 
     if response.status_code == 200:
         data = response.json()
         predictions = data.get('predictions', [])
-        if predictions:
-            status = "fraud" if "fraud" in [pred["class"] for pred in predictions] else "clear"
-        else:
-            status = "clear"
+        status = "fraud" if "fraud" in [pred["class"] for pred in predictions] else "clear"
     else:
         return jsonify({'error': 'Failed to process image with Roboflow API'}), 500
 
     return jsonify({'status': status})
-
-# ------------------- SOCKET.IO EVENTS -------------------
 
 @socketio.on('join-room')
 def handle_join_room(data):
@@ -125,8 +115,6 @@ def handle_signal(data):
 @socketio.on('disconnect')
 def handle_disconnect():
     print(f'User {request.sid} disconnected')
-
-# ------------------- RUN APP -------------------
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
