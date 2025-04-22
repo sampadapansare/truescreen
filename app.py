@@ -14,7 +14,9 @@ users = {}
 
 # Roboflow API settings
 ROBOFLOW_MODEL_ENDPOINT = "https://detect.roboflow.com/fraud-detection/1"
-ROBOFLOW_API_KEY = "ATCth3RHKPljJdY3UmHL"  # Get your API key from the deploy tab
+ROBOFLOW_API_KEY = "ATCth3RHKPljJdY3UmHL"  # Your API key here
+
+# ------------------- AUTH ROUTES -------------------
 
 @app.route('/')
 def home():
@@ -41,6 +43,13 @@ def login():
             return redirect(url_for('dashboard'))
         return 'Invalid credentials'
     return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('user', None)
+    return redirect(url_for('login'))
+
+# ------------------- PAGES -------------------
 
 @app.route('/dashboard')
 def dashboard():
@@ -79,24 +88,20 @@ def detect():
     _, img_encoded = cv2.imencode('.jpg', img)
     img_bytes = img_encoded.tobytes()
 
-    # Send image to Roboflow API for prediction
     headers = {
         "Authorization": f"Bearer {ROBOFLOW_API_KEY}",
     }
 
-    # POST request to the Roboflow endpoint
     response = requests.post(
-        ROBOFLOW_MODEL_ENDPOINT, 
-        files={"file": img_bytes}, 
+        ROBOFLOW_MODEL_ENDPOINT,
+        files={"file": img_bytes},
         headers=headers
     )
 
     if response.status_code == 200:
         data = response.json()
-        # Assuming the result contains a "predictions" field
         predictions = data.get('predictions', [])
         if predictions:
-            # Assuming fraud detection based on a class label (you can adjust based on your model's output)
             status = "fraud" if "fraud" in [pred["class"] for pred in predictions] else "clear"
         else:
             status = "clear"
