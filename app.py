@@ -46,7 +46,7 @@ def login():
 def dashboard():
     if 'user' not in session:
         return redirect(url_for('login'))
-    return render_template('dashboard.html', user=session['user'])
+    return render_template('dashboard.html', username=session['user'])
 
 @app.route('/schedule')
 def schedule():
@@ -75,9 +75,6 @@ def detect():
     npimg = np.frombuffer(file.read(), np.uint8)
     img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
 
-    if img is None:
-        return jsonify({'error': 'Invalid image file'}), 400
-
     # Prepare image for sending to Roboflow
     _, img_encoded = cv2.imencode('.jpg', img)
     img_bytes = img_encoded.tobytes()
@@ -87,29 +84,24 @@ def detect():
         "Authorization": f"Bearer {ROBOFLOW_API_KEY}",
     }
 
-    try:
-        # POST request to the Roboflow endpoint
-        response = requests.post(
-            ROBOFLOW_MODEL_ENDPOINT, 
-            files={"file": img_bytes}, 
-            headers=headers
-        )
-        
-        # Check if the response was successful
-        if response.status_code == 200:
-            data = response.json()
-            predictions = data.get('predictions', [])
-            
-            # Check if predictions are found and handle accordingly
-            if predictions:
-                status = "fraud" if "fraud" in [pred["class"] for pred in predictions] else "clear"
-            else:
-                status = "clear"
-        else:
-            return jsonify({'error': 'Failed to process image with Roboflow API'}), 500
+    # POST request to the Roboflow endpoint
+    response = requests.post(
+        ROBOFLOW_MODEL_ENDPOINT, 
+        files={"file": img_bytes}, 
+        headers=headers
+    )
 
-    except Exception as e:
-        return jsonify({'error': f'Error while processing the request: {str(e)}'}), 500
+    if response.status_code == 200:
+        data = response.json()
+        # Assuming the result contains a "predictions" field
+        predictions = data.get('predictions', [])
+        if predictions:
+            # Assuming fraud detection based on a class label (you can adjust based on your model's output)
+            status = "fraud" if "fraud" in [pred["class"] for pred in predictions] else "clear"
+        else:
+            status = "clear"
+    else:
+        return jsonify({'error': 'Failed to process image with Roboflow API'}), 500
 
     return jsonify({'status': status})
 
