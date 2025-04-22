@@ -1,21 +1,26 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
-from flask_socketio import SocketIO, emit, join_room, leave_room
-import os
-import requests
+from flask_socketio import SocketIO, join_room, emit
 import cv2
 import numpy as np
+import requests
 import uuid
 
 app = Flask(__name__)
 app.secret_key = 'f283f91a99edbc930fd3fd47c592fc33bdc1b8d7e7d0765a'
 socketio = SocketIO(app)
 
-# Dummy user store
-users = {}
+# In-memory stores
+users = {}            # username → password
+meetings = set()      # active meeting IDs
 
-# Roboflow API settings
-ROBOFLOW_MODEL_ENDPOINT = "https://detect.roboflow.com/fraud-detection/1"
+# Face cascade
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+
+# Roboflow config
 ROBOFLOW_API_KEY = "ATCth3RHKPljJdY3UmHL"
+ROBOFLOW_MODEL_ID = "interview-dxisb/3"
+
+# ─── Auth & Meeting Routes ───────────────────────────────────────────────────
 
 @app.route('/')
 def home():
@@ -24,98 +29,132 @@ def home():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        if username in users:
-            return 'User already exists'
-        users[username] = password
+        u = request.form['username']
+        p = request.form['password']
+        users[u] = p
         return redirect(url_for('login'))
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        if users.get(username) == password:
-            session['user'] = username
+        u = request.form['username']
+        p = request.form['password']
+        if users.get(u) == p:
+            session['username'] = u
             return redirect(url_for('dashboard'))
-        return 'Invalid credentials'
+        return render_template('login.html', error="Invalid credentials")
     return render_template('login.html')
-
-@app.route('/logout')
-def logout():
-    session.pop('user', None)
-    return redirect(url_for('login'))
 
 @app.route('/dashboard')
 def dashboard():
-    if 'user' not in session:
+    if 'username' not in session:
         return redirect(url_for('login'))
-    return render_template('dashboard.html', username=session['user'])
+    return render_template('dashboard.html', username=session['username'])
 
 @app.route('/schedule')
 def schedule():
-    meeting_id = str(uuid.uuid4())
-    return render_template('schedule.html', meeting_id=meeting_id)
+    if 'username' not in session:
+        return redirect(url_for('login'))
+    m = str(uuid.uuid4())[:8]
+    meetings.add(m)
+    return render_template('schedule.html', meeting_id=m)
 
-@app.route('/join')
+@app.route('/join', methods=['GET', 'POST'])
 def join():
-    return render_template('join.html')
+    if 'username' not in session:
+        return redirect(url_for('login'))
+    error = None
+    if request.method == 'POST':
+        m = request.form['meeting_id']
+        if m in meetings:
+            return redirect(url_for('interview', meeting_id=m))
+        error = "Invalid Meeting ID"
+    return render_template('join.html', error=error)
 
-@app.route('/interview')
-def interview():
-    return render_template('interview.html')
+@app.route('/interview/<meeting_id>')
+def interview(meeting_id):
+    if 'username' not in session:
+        return redirect(url_for('login'))
+    if meeting_id not in meetings:
+        return redirect(url_for('join'))
+    return render_template('interview.html', meeting_id=meeting_id)
 
-@app.route('/video')
-def video():
-    return render_template('video.html')
+@app.route('/logout')
+def logout():
+    session.pop('username', None)
+    return redirect(url_for('login'))
+
+# ─── Meeting Link Generator ──────────────────────────────────────────────────
+
+@app.route('/generate_link', methods=['GET'])
+def generate_link():
+    if 'username' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    meeting_id = str(uuid.uuid4())[:8]
+    meetings.add(meeting_id)
+    meeting_url = url_for('interview', meeting_id=meeting_id, _external=True)
+    return jsonify({"meeting_id": meeting_id, "meeting_url": meeting_url})
+
+# ─── WebRTC Signaling ────────────────────────────────────────────────────────
+
+@socketio.on('join-room')
+def on_join(data):
+    room = data['room']
+    join_room(room)
+    emit('user-joined', {'sid': request.sid}, room=room, include_self=False)
+
+@socketio.on('signal')
+def on_signal(data):
+    room = data['room']
+    emit('signal', data, room=room, include_self=False)
+
+# ─── Fraud Detection Endpoint ────────────────────────────────────────────────
 
 @app.route('/detect', methods=['POST'])
 def detect():
-    if 'image' not in request.files:
-        return jsonify({'error': 'No image uploaded'}), 400
+    room = request.form['room']
+    file = request.files['frame'].read()
+    arr = np.frombuffer(file, np.uint8)
+    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
-    file = request.files['image']
-    npimg = np.frombuffer(file.read(), np.uint8)
-    img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+    alert = ""
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+    if len(faces) == 0:
+        alert = "⚠️ No Person Detected"
 
-    _, img_encoded = cv2.imencode('.jpg', img)
-    img_bytes = img_encoded.tobytes()
+    _, enc = cv2.imencode('.jpg', frame)
+    try:
+        resp = requests.post(
+            f"https://detect.roboflow.com/{ROBOFLOW_MODEL_ID}",
+            files={"file": enc.tobytes()},
+            params={"api_key": ROBOFLOW_API_KEY, "confidence": 50, "overlap": 30}
+        ).json()
+        for obj in resp.get("predictions", []):
+            c = obj["confidence"]
+            area = obj["width"] * obj["height"]
+            if c >= 0.7 and area >= 2000:
+                alert = f"⚠️ Suspicious Object: {obj['class']}"
+                break
+    except:
+        pass
 
-    headers = {
-        "Authorization": f"Bearer {ROBOFLOW_API_KEY}",
-    }
+    socketio.emit('fraud-alert', {'message': alert}, room=room)
+    return ('', 204)
 
-    response = requests.post(
-        ROBOFLOW_MODEL_ENDPOINT, 
-        files={"file": img_bytes}, 
-        headers=headers
-    )
+# ─── Tab Switching Alert ─────────────────────────────────────────────────────
 
-    if response.status_code == 200:
-        data = response.json()
-        predictions = data.get('predictions', [])
-        status = "fraud" if "fraud" in [pred["class"] for pred in predictions] else "clear"
-    else:
-        return jsonify({'error': 'Failed to process image with Roboflow API'}), 500
+@socketio.on('tab_switched')
+def handle_tab_switch(data):
+    username = data.get('username')
+    count = data.get('count')
+    print(f"[ALERT] {username} switched tabs! Total count: {count}")
+    if count >= 3:
+        print(f"{username} switched tabs more than 3 times! Consider disqualification.")
+    emit('tab_switch_warning', {'message': 'Tab switch detected'}, room=request.sid)
 
-    return jsonify({'status': status})
-
-@socketio.on('join-room')
-def handle_join_room(data):
-    room = data['room']
-    join_room(room)
-    emit('user-connected', {'user': request.sid}, to=room)
-
-@socketio.on('signal')
-def handle_signal(data):
-    emit('signal', data, to=data['target'])
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    print(f'User {request.sid} disconnected')
+# ─── Run ─────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    socketio.run(app, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
+    socketio.run(app, debug=True)
