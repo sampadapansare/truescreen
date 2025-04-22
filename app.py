@@ -1,123 +1,128 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Login</title>
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from flask_socketio import SocketIO, emit, join_room, leave_room
+import os
+import requests
+import cv2
+import numpy as np
 
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+app = Flask(__name__)
+app.secret_key = 'f283f91a99edbc930fd3fd47c592fc33bdc1b8d7e7d0765a'
+socketio = SocketIO(app)
 
-  <style>
-    body {
-      margin: 0;
-      font-family: 'Segoe UI', sans-serif;
-      background: #f5f6fa;
-    }
-    .navbar {
-      background: #2f3640;
-      color: #fff;
-      padding: 15px 30px;
-      display: flex;
-      align-items: center;
-    }
-    .navbar .brand {
-      font-size: 1.3em;
-      font-weight: bold;
-    }
-    .container {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: calc(100vh - 60px);
-    }
-    .card {
-      background: #fff;
-      padding: 30px 40px;
-      border-radius: 10px;
-      box-shadow: 0 0 20px rgba(0,0,0,0.1);
-      width: 360px;
-    }
-    .card h2 {
-      margin-bottom: 20px;
-      color: #2f3640;
-      text-align: center;
-    }
-    .card input[type="text"],
-    .card input[type="password"] {
-      width: 100%;
-      padding: 12px;
-      margin: 10px 0;
-      border: 1px solid #ccc;
-      border-radius: 5px;
-      font-size: 1em;
-    }
-    .remember-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin: 5px 0 10px;
-      font-size: 0.9em;
-      color: #2f3640;
-    }
-    .card button {
-      width: 100%;
-      padding: 12px;
-      margin-top: 10px;
-      background: #0984e3;
-      border: none;
-      color: #fff;
-      font-size: 1em;
-      border-radius: 5px;
-      cursor: pointer;
-      transition: background 0.3s;
-    }
-    .card button:hover {
-      background: #74b9ff;
-    }
-    .card .link {
-      display: block;
-      text-align: center;
-      margin-top: 15px;
-      color: #0984e3;
-      text-decoration: none;
-      font-size: 0.9em;
-    }
-    .error {
-      color: #e84118;
-      text-align: center;
-      margin-top: 10px;
-      font-size: 0.9em;
-    }
-  </style>
-</head>
-<body>
-  <div class="navbar">
-    <div class="brand">Truescreen</div>
-  </div>
+# Dummy user store
+users = {}
 
-  <div class="container">
-    <div class="card">
-      <h2>Login</h2>
-      <form method="POST">
-        <input type="text" name="username" placeholder="Enter your username" required />
-        <input type="password" name="password" placeholder="Enter your password" required />
+# Roboflow API settings
+ROBOFLOW_MODEL_ENDPOINT = "https://detect.roboflow.com/fraud-detection/1"
+ROBOFLOW_API_KEY = "ATCth3RHKPljJdY3UmHL"  # Get your API key from the deploy tab
 
-        <div class="remember-row">
-          <input type="checkbox" id="remember" name="remember" />
-          <label for="remember">Remember Me</label>
-        </div>
+@app.route('/')
+def home():
+    return redirect(url_for('login'))
 
-        <button type="submit">Login</button>
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        if username in users:
+            return 'User already exists'
+        users[username] = password
+        return redirect(url_for('login'))
+    return render_template('register.html')
 
-        {% if error %}
-          <div class="error">{{ error }}</div>
-        {% endif %}
-      </form>
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        if users.get(username) == password:
+            session['user'] = username
+            return redirect(url_for('dashboard'))
+        return 'Invalid credentials'
+    return render_template('login.html')
 
-      <a href="/register" class="link">Don’t have an account? Register here</a>
-    </div>
-  </div>
-</body>
-</html>
+@app.route('/dashboard')
+def dashboard():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template('dashboard.html', user=session['user'])
+
+@app.route('/schedule')
+def schedule():
+    return render_template('schedule.html')
+
+@app.route('/join')
+def join():
+    return render_template('join.html')
+
+@app.route('/interview')
+def interview():
+    return render_template('interview.html')
+
+@app.route('/video')
+def video():
+    return render_template('video.html')
+
+# ------------------- FRAUD DETECTION -------------------
+
+@app.route('/detect', methods=['POST'])
+def detect():
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image uploaded'}), 400
+
+    file = request.files['image']
+    npimg = np.frombuffer(file.read(), np.uint8)
+    img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+
+    # Prepare image for sending to Roboflow
+    _, img_encoded = cv2.imencode('.jpg', img)
+    img_bytes = img_encoded.tobytes()
+
+    # Send image to Roboflow API for prediction
+    headers = {
+        "Authorization": f"Bearer {ROBOFLOW_API_KEY}",
+    }
+
+    # POST request to the Roboflow endpoint
+    response = requests.post(
+        ROBOFLOW_MODEL_ENDPOINT, 
+        files={"file": img_bytes}, 
+        headers=headers
+    )
+
+    if response.status_code == 200:
+        data = response.json()
+        # Assuming the result contains a "predictions" field
+        predictions = data.get('predictions', [])
+        if predictions:
+            # Assuming fraud detection based on a class label (you can adjust based on your model's output)
+            status = "fraud" if "fraud" in [pred["class"] for pred in predictions] else "clear"
+        else:
+            status = "clear"
+    else:
+        return jsonify({'error': 'Failed to process image with Roboflow API'}), 500
+
+    return jsonify({'status': status})
+
+# ------------------- SOCKET.IO EVENTS -------------------
+
+@socketio.on('join-room')
+def handle_join_room(data):
+    room = data['room']
+    join_room(room)
+    emit('user-connected', {'user': request.sid}, to=room)
+
+@socketio.on('signal')
+def handle_signal(data):
+    emit('signal', data, to=data['target'])
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print(f'User {request.sid} disconnected')
+
+# ------------------- RUN APP -------------------
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    socketio.run(app, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
