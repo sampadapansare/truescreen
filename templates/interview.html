@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interview</title>
+    <title>Live Interview</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', sans-serif;
@@ -52,7 +53,7 @@
 <body>
     <div class="container">
         <div class="card">
-            <h2 class="card-title">Live Interview</h2>
+            <h2 class="card-title">Live Interview - Room: {{ meeting_id }}</h2>
             <div class="video-container">
                 <video id="localVideo" autoplay muted></video>
                 <video id="remoteVideo" autoplay></video>
@@ -65,55 +66,102 @@
     </div>
 
     <script>
-        // Simple WebRTC example for video call setup
-        let localStream;
-        let peerConnection;
-        const startCallBtn = document.getElementById('startCallBtn');
-        const endCallBtn = document.getElementById('endCallBtn');
-        const localVideo = document.getElementById('localVideo');
-        const remoteVideo = document.getElementById('remoteVideo');
+        const socket = io();
+        const room = "{{ meeting_id }}";
 
+        let localStream, remoteStream, peerConnection;
         const servers = {
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
         };
 
-        startCallBtn.addEventListener('click', startCall);
-        endCallBtn.addEventListener('click', endCall);
+        const startCallBtn = document.getElementById("startCallBtn");
+        const endCallBtn = document.getElementById("endCallBtn");
+        const localVideo = document.getElementById("localVideo");
+        const remoteVideo = document.getElementById("remoteVideo");
 
-        async function startCall() {
+        socket.emit("join", room);
+
+        startCallBtn.onclick = async () => {
+            startCallBtn.style.display = "none";
+            endCallBtn.style.display = "inline";
+
             localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             localVideo.srcObject = localStream;
+
             peerConnection = new RTCPeerConnection(servers);
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-            localStream.getTracks().forEach(track => {
-                peerConnection.addTrack(track, localStream);
-            });
-
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    // send ICE candidate to the remote peer (signaling server)
+            peerConnection.onicecandidate = e => {
+                if (e.candidate) {
+                    socket.emit("ice-candidate", { room: room, candidate: e.candidate });
                 }
             };
 
-            peerConnection.ontrack = (event) => {
-                remoteVideo.srcObject = event.streams[0];
+            peerConnection.ontrack = e => {
+                if (!remoteStream) {
+                    remoteStream = new MediaStream();
+                    remoteVideo.srcObject = remoteStream;
+                }
+                remoteStream.addTrack(e.track);
             };
 
             const offer = await peerConnection.createOffer();
             await peerConnection.setLocalDescription(offer);
+            socket.emit("offer", { room: room, offer: offer });
+        };
 
-            // Send offer to the remote peer (signaling server)
-            // After receiving answer, call peerConnection.setRemoteDescription(answer)
-            startCallBtn.style.display = 'none';
-            endCallBtn.style.display = 'inline';
-        }
-
-        function endCall() {
+        endCallBtn.onclick = () => {
             peerConnection.close();
             localStream.getTracks().forEach(track => track.stop());
-            startCallBtn.style.display = 'inline';
-            endCallBtn.style.display = 'none';
-        }
+            startCallBtn.style.display = "inline";
+            endCallBtn.style.display = "none";
+        };
+
+        socket.on("offer", async ({ offer }) => {
+            if (!peerConnection) {
+                peerConnection = new RTCPeerConnection(servers);
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localVideo.srcObject = localStream;
+                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+                peerConnection.onicecandidate = e => {
+                    if (e.candidate) {
+                        socket.emit("ice-candidate", { room: room, candidate: e.candidate });
+                    }
+                };
+
+                peerConnection.ontrack = e => {
+                    if (!remoteStream) {
+                        remoteStream = new MediaStream();
+                        remoteVideo.srcObject = remoteStream;
+                    }
+                    remoteStream.addTrack(e.track);
+                };
+            }
+
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit("answer", { room: room, answer: answer });
+        });
+
+        socket.on("answer", async ({ answer }) => {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        });
+
+        socket.on("ice-candidate", async ({ candidate }) => {
+            try {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (err) {
+                console.error("Error adding received ice candidate", err);
+            }
+        });
+    </script>
+
+    <!-- Fraud Detection Placeholder -->
+    <script>
+        // Add fraud detection here (absence, phone detection using YOLO/OpenCV if needed)
+        // Example: setInterval(() => detectCheatingStuff(), 2000);
     </script>
 </body>
 </html>
