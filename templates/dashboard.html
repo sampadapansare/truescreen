@@ -74,6 +74,15 @@
         .btn:hover {
             background-color: #74b9ff;
         }
+
+        input[type="text"] {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-top: 10px;
+            width: 100%;
+            margin-bottom: 15px;
+        }
     </style>
 </head>
 <body>
@@ -86,7 +95,11 @@
         <div class="card">
             <h2>Welcome to Interview</h2>
             <a href="{{ url_for('schedule') }}" class="btn">📅 Schedule Meeting</a>
-            <a href="{{ url_for('interview', meeting_id=meeting_id) }}" class="btn">🔗 Join Meeting</a>
+
+            <form action="{{ url_for('interview_redirect') }}" method="POST">
+                <input type="text" name="meeting_id" placeholder="Enter Meeting ID" required>
+                <button type="submit" class="btn">🔗 Join Meeting</button>
+            </form>
         </div>
     </div>
 </body>
