@@ -57,7 +57,7 @@ def logout():
 def dashboard():
     if 'username' not in session:
         return redirect(url_for('login'))
-    meeting_id = str(uuid.uuid4())[:8]  # Short random meeting ID
+    meeting_id = str(uuid.uuid4())[:8]
     return render_template('dashboard.html', username=session['username'], meeting_id=meeting_id)
 
 @app.route('/schedule')
@@ -72,11 +72,10 @@ def schedule():
 @app.route('/join', methods=['GET', 'POST'])
 def join_meeting():
     if request.method == 'POST':
-        meeting_id = request.form['meeting_id']
+        meeting_id = request.form['meeting_id'].strip()
         if meeting_id in meetings:
             return redirect(url_for('interview', meeting_id=meeting_id))
-        else:
-            return render_template('join.html', error="Invalid Meeting ID")
+        return render_template('join.html', error="Invalid Meeting ID")
     return render_template('join.html')
 
 @app.route('/interview/<meeting_id>')
@@ -132,8 +131,8 @@ def detect():
             if c >= 0.7 and area >= 2000:
                 alert = f"⚠️ Suspicious Object: {obj['class']}"
                 break
-    except:
-        pass
+    except Exception as e:
+        print(f"Detection error: {e}")
 
     socketio.emit('fraud-alert', {'message': alert}, room=room)
     return ('', 204)
