@@ -79,49 +79,17 @@
         const localVideo = document.getElementById("localVideo");
         const remoteVideo = document.getElementById("remoteVideo");
 
+        // Auto-join room and initialize connection
         socket.emit("join", room);
+        initializePeerConnection();
 
-        startCallBtn.onclick = async () => {
-            startCallBtn.style.display = "none";
-            endCallBtn.style.display = "inline";
-
-            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            localVideo.srcObject = localStream;
-
-            peerConnection = new RTCPeerConnection(servers);
-            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-            peerConnection.onicecandidate = e => {
-                if (e.candidate) {
-                    socket.emit("ice-candidate", { room: room, candidate: e.candidate });
-                }
-            };
-
-            peerConnection.ontrack = e => {
-                if (!remoteStream) {
-                    remoteStream = new MediaStream();
-                    remoteVideo.srcObject = remoteStream;
-                }
-                remoteStream.addTrack(e.track);
-            };
-
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            socket.emit("offer", { room: room, offer: offer });
-        };
-
-        endCallBtn.onclick = () => {
-            peerConnection.close();
-            localStream.getTracks().forEach(track => track.stop());
-            startCallBtn.style.display = "inline";
-            endCallBtn.style.display = "none";
-        };
-
-        socket.on("offer", async ({ offer }) => {
-            if (!peerConnection) {
-                peerConnection = new RTCPeerConnection(servers);
+        // Initialize peer connection with auto-negotiation
+        async function initializePeerConnection() {
+            try {
                 localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                 localVideo.srcObject = localStream;
+
+                peerConnection = new RTCPeerConnection(servers);
                 localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
                 peerConnection.onicecandidate = e => {
@@ -137,8 +105,40 @@
                     }
                     remoteStream.addTrack(e.track);
                 };
-            }
 
+                // Auto-start negotiation when joining
+                startNegotiation();
+
+            } catch (err) {
+                console.error("Error initializing call:", err);
+            }
+        }
+
+        // Handle offer/answer negotiation
+        async function startNegotiation() {
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            socket.emit("offer", { room: room, offer: offer });
+        }
+
+        // Existing button handlers (preserved)
+        startCallBtn.onclick = async () => {
+            startCallBtn.style.display = "none";
+            endCallBtn.style.display = "inline";
+            await initializePeerConnection();
+        };
+
+        endCallBtn.onclick = () => {
+            if (peerConnection) peerConnection.close();
+            if (localStream) localStream.getTracks().forEach(track => track.stop());
+            startCallBtn.style.display = "inline";
+            endCallBtn.style.display = "none";
+        };
+
+        // Socket event handlers
+        socket.on("offer", async ({ offer }) => {
+            if (!peerConnection) await initializePeerConnection();
+            
             await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
             const answer = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(answer);
@@ -153,15 +153,14 @@
             try {
                 await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
             } catch (err) {
-                console.error("Error adding received ice candidate", err);
+                console.error("Error adding ICE candidate:", err);
             }
         });
-    </script>
 
-    <!-- Fraud Detection Placeholder -->
-    <script>
-        // Add fraud detection here (absence, phone detection using YOLO/OpenCV if needed)
-        // Example: setInterval(() => detectCheatingStuff(), 2000);
+        // Error handling
+        socket.on("connect_error", (err) => {
+            console.error("Socket connection error:", err);
+        });
     </script>
 </body>
 </html>
