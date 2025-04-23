@@ -29,16 +29,16 @@
 <body>
     <div class="container">
         <div class="card">
-            <h2 class="card-title">Join a Meeting</h2>
+            <h2 class="card-title">Join Meeting</h2>
             <form action="{{ url_for('video') }}" method="get">
-                <div class="form-group">
-                    <label for="meetingId">Enter Meeting ID:</label>
-                    <input type="text" class="form-control" id="meetingId" name="meetingId" required>
-                </div>
+                <!-- Automatically filled Meeting ID -->
+                <input type="hidden" id="meetingId" name="meetingId" value="{{ meeting_id }}" required>
+                
                 <div class="form-group">
                     <label for="username">Enter Your Name:</label>
                     <input type="text" class="form-control" id="username" name="username" required>
                 </div>
+                
                 <button type="submit" class="btn btn-primary">Join</button>
             </form>
         </div>
