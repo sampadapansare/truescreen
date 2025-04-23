@@ -7,7 +7,7 @@ import uuid
 
 app = Flask(__name__)
 app.secret_key = 'f283f91a99edbc930fd3fd47c592fc33bdc1b8d7e7d0765a'
-socketio = SocketIO(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 users = {}
 meetings = set()
@@ -74,6 +74,25 @@ def interview(meeting_id):
         return redirect(url_for('dashboard'))
     return render_template('interview.html', meeting_id=meeting_id)
 
+# WebRTC Signaling Handlers (NEW)
+@socketio.on('join')
+def handle_join(room):
+    join_room(room)
+    emit('user_joined', {'sid': request.sid}, room=room)
+
+@socketio.on('offer')
+def handle_offer(data):
+    emit('offer', {'offer': data['offer'], 'sid': request.sid}, room=data['room'], include_self=False)
+
+@socketio.on('answer')
+def handle_answer(data):
+    emit('answer', {'answer': data['answer'], 'sid': request.sid}, room=data['room'], include_self=False)
+
+@socketio.on('ice-candidate')
+def handle_ice_candidate(data):
+    emit('ice-candidate', {'candidate': data['candidate'], 'sid': request.sid}, room=data['room'], include_self=False)
+
+# Existing detection handlers
 @socketio.on('join-room')
 def on_join(data):
     room = data['room']
