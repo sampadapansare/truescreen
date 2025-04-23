@@ -13,14 +13,14 @@ socketio = SocketIO(app)
 users = {}            # username → password
 meetings = set()      # active meeting IDs
 
-# Face cascade
+# Face detection model
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
-# Roboflow config
+# Roboflow setup
 ROBOFLOW_API_KEY = "ATCth3RHKPljJdY3UmHL"
 ROBOFLOW_MODEL_ID = "interview-dxisb/3"
 
-# ─── Auth & Meeting Routes ───────────────────────────────────────────────────
+# ─── Auth Routes ─────────────────────────────────────────────────────────────
 
 @app.route('/')
 def home():
@@ -46,6 +46,13 @@ def login():
         return render_template('login.html', error="Invalid credentials")
     return render_template('login.html')
 
+@app.route('/logout')
+def logout():
+    session.pop('username', None)
+    return redirect(url_for('login'))
+
+# ─── Dashboard & Scheduling ──────────────────────────────────────────────────
+
 @app.route('/dashboard')
 def dashboard():
     if 'username' not in session:
@@ -56,45 +63,18 @@ def dashboard():
 def schedule():
     if 'username' not in session:
         return redirect(url_for('login'))
-    m = str(uuid.uuid4())[:8]
-    meetings.add(m)
-    return render_template('schedule.html', meeting_id=m)
-
-@app.route('/join', methods=['GET', 'POST'])
-def join():
-    if 'username' not in session:
-        return redirect(url_for('login'))
-    error = None
-    if request.method == 'POST':
-        m = request.form['meeting_id']
-        if m in meetings:
-            return redirect(url_for('interview', meeting_id=m))
-        error = "Invalid Meeting ID"
-    return render_template('join.html', error=error)
+    meeting_id = str(uuid.uuid4())[:8]
+    meetings.add(meeting_id)
+    meeting_url = url_for('interview', meeting_id=meeting_id, _external=True)
+    return render_template('schedule.html', meeting_id=meeting_id, meeting_url=meeting_url)
 
 @app.route('/interview/<meeting_id>')
 def interview(meeting_id):
     if 'username' not in session:
         return redirect(url_for('login'))
     if meeting_id not in meetings:
-        return redirect(url_for('join'))
+        return redirect(url_for('dashboard'))
     return render_template('interview.html', meeting_id=meeting_id)
-
-@app.route('/logout')
-def logout():
-    session.pop('username', None)
-    return redirect(url_for('login'))
-
-# ─── Meeting Link Generator ──────────────────────────────────────────────────
-
-@app.route('/generate_link', methods=['GET'])
-def generate_link():
-    if 'username' not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-    meeting_id = str(uuid.uuid4())[:8]
-    meetings.add(meeting_id)
-    meeting_url = url_for('interview', meeting_id=meeting_id, _external=True)
-    return jsonify({"meeting_id": meeting_id, "meeting_url": meeting_url})
 
 # ─── WebRTC Signaling ────────────────────────────────────────────────────────
 
