@@ -86,7 +86,7 @@
         <div class="card">
             <h2>Welcome to Interview</h2>
             <a href="{{ url_for('schedule') }}" class="btn">📅 Schedule Meeting</a>
-            <a href="{{ url_for('interview') }}" class="btn">🔗 Join Meeting</a>
+            <a href="{{ url_for('interview', meeting_id=meeting_id) }}" class="btn">🔗 Join Meeting</a>
         </div>
     </div>
 </body>
