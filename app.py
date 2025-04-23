@@ -51,7 +51,7 @@ def logout():
     session.pop('username', None)
     return redirect(url_for('login'))
 
-# ─── Dashboard & Scheduling ──────────────────────────────────────────────────
+# ─── Dashboard & Meeting Routes ──────────────────────────────────────────────
 
 @app.route('/dashboard')
 def dashboard():
@@ -67,6 +67,16 @@ def schedule():
     meetings.add(meeting_id)
     meeting_url = url_for('interview', meeting_id=meeting_id, _external=True)
     return render_template('schedule.html', meeting_id=meeting_id, meeting_url=meeting_url)
+
+@app.route('/join', methods=['GET', 'POST'])
+def join_meeting():
+    if request.method == 'POST':
+        meeting_id = request.form['meeting_id']
+        if meeting_id in meetings:
+            return redirect(url_for('interview', meeting_id=meeting_id))
+        else:
+            return render_template('join.html', error="Invalid Meeting ID")
+    return render_template('join.html')
 
 @app.route('/interview/<meeting_id>')
 def interview(meeting_id):
@@ -89,7 +99,7 @@ def on_signal(data):
     room = data['room']
     emit('signal', data, room=room, include_self=False)
 
-# ─── Fraud Detection Endpoint ────────────────────────────────────────────────
+# ─── Fraud Detection ─────────────────────────────────────────────────────────
 
 @app.route('/detect', methods=['POST'])
 def detect():
@@ -123,7 +133,7 @@ def detect():
     socketio.emit('fraud-alert', {'message': alert}, room=room)
     return ('', 204)
 
-# ─── Tab Switching Alert ─────────────────────────────────────────────────────
+# ─── Tab Switch Monitoring ───────────────────────────────────────────────────
 
 @socketio.on('tab_switched')
 def handle_tab_switch(data):
