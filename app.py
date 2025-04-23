@@ -9,18 +9,13 @@ app = Flask(__name__)
 app.secret_key = 'f283f91a99edbc930fd3fd47c592fc33bdc1b8d7e7d0765a'
 socketio = SocketIO(app)
 
-# In-memory storage
-users = {}                # username: password
-meetings = set()          # active meeting IDs
+users = {}
+meetings = set()
 
-# Face detection setup
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
-# Roboflow API details
 ROBOFLOW_API_KEY = "ATCth3RHKPljJdY3UmHL"
 ROBOFLOW_MODEL_ID = "interview-dxisb/3"
-
-# ─── Auth Routes ─────────────────────────────────────────────
 
 @app.route('/')
 def home():
@@ -49,14 +44,11 @@ def logout():
     session.pop('username', None)
     return redirect(url_for('login'))
 
-# ─── Dashboard & Meeting Routes ──────────────────────────────
-
 @app.route('/dashboard')
 def dashboard():
     if 'username' not in session:
         return redirect(url_for('login'))
-    meeting_id = str(uuid.uuid4())[:8]
-    return render_template('dashboard.html', username=session['username'], meeting_id=meeting_id)
+    return render_template('dashboard.html', username=session['username'])
 
 @app.route('/schedule')
 def schedule():
@@ -82,8 +74,6 @@ def interview(meeting_id):
         return redirect(url_for('dashboard'))
     return render_template('interview.html', meeting_id=meeting_id)
 
-# ─── WebRTC Signaling ────────────────────────────────────────
-
 @socketio.on('join-room')
 def on_join(data):
     room = data['room']
@@ -95,8 +85,6 @@ def on_signal(data):
     room = data['room']
     emit('signal', data, room=room, include_self=False)
 
-# ─── Fraud Detection ─────────────────────────────────────────
-
 @app.route('/detect', methods=['POST'])
 def detect():
     room = request.form['room']
@@ -106,13 +94,11 @@ def detect():
 
     alert = ""
 
-    # 1. Face detection
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     faces = face_cascade.detectMultiScale(gray, 1.1, 4)
     if len(faces) == 0:
         alert = "⚠️ No Person Detected"
 
-    # 2. Roboflow detection
     _, enc = cv2.imencode('.jpg', frame)
     try:
         response = requests.post(
@@ -131,8 +117,6 @@ def detect():
     socketio.emit('fraud-alert', {'message': alert}, room=room)
     return ('', 204)
 
-# ─── Tab Switch Detection ───────────────────────────────────
-
 @socketio.on('tab_switched')
 def handle_tab_switch(data):
     username = data.get('username')
@@ -141,8 +125,6 @@ def handle_tab_switch(data):
     if count >= 3:
         print(f"[DISQUALIFY?] {username} exceeded tab switch limit.")
     emit('tab_switch_warning', {'message': 'Tab switch detected'}, room=request.sid)
-
-# ─── Main ───────────────────────────────────────────────────
 
 if __name__ == '__main__':
     socketio.run(app, debug=True)
