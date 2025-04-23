@@ -57,7 +57,8 @@ def logout():
 def dashboard():
     if 'username' not in session:
         return redirect(url_for('login'))
-    return render_template('dashboard.html', username=session['username'])
+    meeting_id = str(uuid.uuid4())[:8]  # Generate a short random meeting ID
+    return render_template('dashboard.html', username=session['username'], meeting_id=meeting_id)
 
 @app.route('/schedule')
 def schedule():
