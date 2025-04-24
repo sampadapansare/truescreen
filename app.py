@@ -202,10 +202,10 @@ def detect():
             _, enc = cv2.imencode('.jpg', frame)
             try:
                 response = requests.post(
-                    f"https://detect.roboflow.com/{ROBOFLOW_MODEL_ID}",
+                    f"https://detect.roboflow.com/{'interview-dxisb/3'}",
                     files={"file": enc.tobytes()},
                     params={
-                        "api_key": ROBOFLOW_API_KEY,
+                        "api_key": 'ATCth3RHKPljJdY3UmHL',
                         "confidence": 50,
                         "overlap": 30
                     }
