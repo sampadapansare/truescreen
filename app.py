@@ -9,11 +9,12 @@ from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = 'f283f91a99edbc930fd3fd47c592fc33bdc1b8d7e7d0765a'
+
+# Configure SocketIO
 socketio = SocketIO(app, 
                    cors_allowed_origins="*", 
                    logger=True,
                    engineio_logger=True,
-                   async_mode='gevent',
                    ping_timeout=60,
                    ping_interval=25)
 
@@ -30,7 +31,7 @@ face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fronta
 ROBOFLOW_API_KEY = "ATCth3RHKPljJdY3UmHL"
 ROBOFLOW_MODEL_ID = "interview-dxisb/3"
 
-# Routes (unchanged)
+# Routes
 @app.route('/')
 def home():
     return redirect(url_for('login'))
@@ -45,10 +46,10 @@ def register():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        u = request.form['username']
-        p = request.form['password']
-        if users.get(u) == p:
-            session['username'] = u
+        username = request.form['username']
+        password = request.form['password']
+        if users.get(username) == password:
+            session['username'] = username
             return redirect(url_for('dashboard'))
         return render_template('login.html', error="Invalid credentials")
     return render_template('login.html')
@@ -88,25 +89,20 @@ def interview(meeting_id):
         return redirect(url_for('dashboard'))
     return render_template('interview.html', meeting_id=meeting_id)
 
-# Enhanced WebRTC Signaling
+# WebRTC Signaling
 @socketio.on('join_room')
 def handle_join_room(data):
-    """Handle participant joining a room"""
     room = data['room']
     user_id = request.sid
     join_room(room)
     
-    # Track participant
     if room not in active_participants:
         active_participants[room] = []
     active_participants[room].append(user_id)
     
     logger.info(f"User {user_id} joined room {room}")
-    
-    # Notify others in the room
     emit('user_connected', {'user_id': user_id}, room=room, include_self=False)
     
-    # Send list of existing participants to the new joiner
     existing_users = [uid for uid in active_participants[room] if uid != user_id]
     emit('room_info', {
         'room': room,
@@ -115,12 +111,11 @@ def handle_join_room(data):
 
 @socketio.on('offer')
 def handle_offer(data):
-    """Relay offer to specific target"""
     target_id = data['target_id']
     room = data['room']
     sender_id = request.sid
     
-    logger.info(f"Relaying offer from {sender_id} to {target_id} in {room}")
+    logger.info(f"Relaying offer from {sender_id} to {target_id}")
     emit('offer', {
         'offer': data['offer'],
         'sender_id': sender_id
@@ -128,12 +123,11 @@ def handle_offer(data):
 
 @socketio.on('answer')
 def handle_answer(data):
-    """Relay answer to specific target"""
     target_id = data['target_id']
     room = data['room']
     sender_id = request.sid
     
-    logger.info(f"Relaying answer from {sender_id} to {target_id} in {room}")
+    logger.info(f"Relaying answer from {sender_id} to {target_id}")
     emit('answer', {
         'answer': data['answer'],
         'sender_id': sender_id
@@ -141,7 +135,6 @@ def handle_answer(data):
 
 @socketio.on('ice_candidate')
 def handle_ice_candidate(data):
-    """Relay ICE candidate to specific target"""
     target_id = data['target_id']
     sender_id = request.sid
     
@@ -153,7 +146,6 @@ def handle_ice_candidate(data):
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    """Clean up on participant disconnect"""
     user_id = request.sid
     for room, participants in active_participants.items():
         if user_id in participants:
@@ -161,13 +153,12 @@ def handle_disconnect():
             logger.info(f"User {user_id} disconnected from room {room}")
             emit('user_disconnected', {'user_id': user_id}, room=room)
             
-            # Clean up empty rooms
             if not participants:
                 del active_participants[room]
                 close_room(room)
             break
 
-# Existing detection handlers
+# Detection handlers
 @app.route('/detect', methods=['POST'])
 def detect():
     room = request.form['room']
